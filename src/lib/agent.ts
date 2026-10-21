@@ -84,6 +84,11 @@ type ChatMessage =
   | { role: "assistant"; content: string | null; tool_calls?: RawToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
 type RawToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
+type ChatResponse = {
+  error?: { message?: string };
+  choices?: { finish_reason?: string; message?: { content?: string | null; tool_calls?: RawToolCall[] } }[];
+  usage?: StepLog["usage"];
+};
 
 export async function runAgent(opts: {
   apiKey: string;
@@ -117,7 +122,7 @@ export async function runAgent(opts: {
       body: JSON.stringify(body),
       signal,
     });
-    const json = await res.json().catch(() => null);
+    const json = (await res.json().catch(() => null)) as ChatResponse | null;
     const latencyMs = Math.round(performance.now() - t0);
     if (!res.ok) {
       const msg = json?.error?.message ?? `HTTP ${res.status}`;
@@ -125,14 +130,14 @@ export async function runAgent(opts: {
       throw new Error(msg);
     }
 
-    const choice = json.choices?.[0];
+    const choice = json?.choices?.[0];
     const message = choice?.message ?? {};
     const rawCalls: RawToolCall[] = message.tool_calls ?? [];
     const stepLog: StepLog = {
       latencyMs,
       content: message.content ?? null,
       toolCalls: [],
-      usage: json.usage,
+      usage: json?.usage,
       finishReason: choice?.finish_reason,
       request: structuredClone(body),
       response: json,
