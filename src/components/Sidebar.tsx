@@ -5,7 +5,9 @@ import type { Invocation, StepLog } from "../lib/agent.ts";
 export function Sidebar({ invocations, onClear }: { invocations: Invocation[]; onClear: () => void }) {
   const endRef = useRef<HTMLDivElement>(null);
   const last = invocations.at(-1);
-  useEffect(() => endRef.current?.scrollIntoView({ block: "end" }), [invocations.length, last?.steps.length, last?.status]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [invocations.length, last?.steps.length, last?.status]);
 
   return (
     <aside className="sidebar">

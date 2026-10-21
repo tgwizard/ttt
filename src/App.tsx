@@ -159,7 +159,9 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo]);
 
-  useEffect(() => save("sidebar", sidebarOpen), [sidebarOpen]);
+  useEffect(() => {
+    save("sidebar", sidebarOpen);
+  }, [sidebarOpen]);
 
   return (
     <div className={`app ${sidebarOpen ? "with-sidebar" : ""}`}>
