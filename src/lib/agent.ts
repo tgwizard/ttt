@@ -1,7 +1,7 @@
 // The agent: given the user's speech and the current document, call the model and apply its tool calls.
 // Each invocation is stateless: the prompt carries recent speech (with what happened to it) and the full document.
 
-import { applyTool, TOOL_DEFINITIONS } from "./tools.ts";
+import { applyTool, ASK_USER_TOOL, TOOL_DEFINITIONS } from "./tools.ts";
 
 export const API_BASE = "https://api.meta.ai/v1";
 export const MAX_STEPS = 6;
@@ -9,7 +9,8 @@ export const MAX_STEPS = 6;
 const PROMPT_CACHE_KEY = "ttt-agent";
 
 export type UtteranceStatus = "new" | "pending" | "handled";
-export type Utterance = { id: number; text: string; at: number; status: UtteranceStatus };
+// role "assistant" marks a question the model asked (via ask_user), kept in the transcript for context.
+export type Utterance = { id: number; text: string; at: number; status: UtteranceStatus; role?: "assistant" };
 
 export type Settings = { model: string; reasoningEffort: string };
 
@@ -38,6 +39,7 @@ export type Invocation = {
   steps: StepLog[];
   status: "running" | "done" | "error";
   edited: boolean;
+  asked?: string;
   error?: string;
 };
 
@@ -49,6 +51,7 @@ Reading the speech:
 - Speech arrives at every pause, so the user may be mid-thought: a chunk can stop in the middle of a sentence or instruction ("and then add a section about"). If the speech is clearly incomplete or too ambiguous to act on, do NOT edit. Reply with a few words on what you're waiting for; it will come back to you together with what they say next.
 - If the intent is clear, act right away. Prefer acting over waiting: the user watches the document update live and can correct you.
 - Talk not meant for the document (talking to someone else, "hmm, let me think", "okay") → do nothing.
+- If you can't act without the user's input (which part they mean, details only they know), call ask_user with one short question instead of guessing. Their answer comes as the next speech. Don't ask about things you can reasonably decide yourself.
 - <earlier_speech> is everything the user has said this session that you already acted on. Never apply it again; use it only as context ("the point I made earlier", "what I said about X").
 - <new_speech> is what to act on now. "pending" items in it were said earlier but not acted on yet: treat them together with the rest as one message.
 
@@ -69,7 +72,7 @@ export function buildUserMessage(utterances: Utterance[], doc: string): string {
   const lines: string[] = [];
   if (handled.length) {
     lines.push("<earlier_speech>");
-    for (const u of handled) lines.push(`[handled] ${u.text}`);
+    for (const u of handled) lines.push(u.role === "assistant" ? `[you asked] ${u.text}` : `[handled] ${u.text}`);
     lines.push("</earlier_speech>", "");
   }
   lines.push(doc.trim() ? `<document>\n${doc}\n</document>` : "<document>\n(empty)\n</document>", "");
@@ -111,7 +114,7 @@ export async function runAgent(opts: {
       model: settings.model,
       ...(settings.reasoningEffort ? { reasoning_effort: settings.reasoningEffort } : {}),
       messages,
-      tools: TOOL_DEFINITIONS,
+      tools: [...TOOL_DEFINITIONS, ASK_USER_TOOL],
       tool_choice: "auto",
       prompt_cache_key: PROMPT_CACHE_KEY,
     };
@@ -161,6 +164,10 @@ export async function runAgent(opts: {
       }
       if (typeof args === "string") {
         result = "Error: arguments were not valid JSON.";
+      } else if (call.function.name === "ask_user") {
+        ok = typeof args.question === "string" && args.question.trim() !== "";
+        if (ok) invocation.asked = String(args.question).trim();
+        result = ok ? "Shown to the user. Their answer will arrive as new speech." : "Error: `question` must be a non-empty string";
       } else {
         const r = applyTool(getDoc(), call.function.name, args);
         ok = r.ok;

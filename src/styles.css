@@ -228,6 +228,33 @@ a {
     0 2px 4px rgba(0, 0, 0, 0.03),
     0 12px 32px rgba(0, 0, 0, 0.1);
 }
+.question {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 8px 8px 8px 16px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 14.5px;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  animation: rise 0.2s ease-out;
+}
+.question .icon-button {
+  color: #aaa;
+}
+.question .icon-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
 .rec-error {
   pointer-events: auto;
   max-width: min(520px, calc(100vw - 32px));
@@ -281,12 +308,13 @@ a {
   overflow: hidden;
   white-space: nowrap;
   font-size: 15px;
+}
+.ticker.overflowing {
   mask-image: linear-gradient(to right, transparent, #000 48px);
   -webkit-mask-image: linear-gradient(to right, transparent, #000 48px);
 }
 .ticker-inner {
   display: inline-block;
-  padding-left: 48px;
 }
 .said.handled {
   color: #c0c0c0;
@@ -340,6 +368,10 @@ kbd {
   background: none;
   color: var(--muted);
   cursor: pointer;
+}
+.icon-button.small {
+  width: 20px;
+  height: 20px;
 }
 .icon-button:hover {
   background: rgba(0, 0, 0, 0.05);

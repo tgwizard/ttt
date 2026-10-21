@@ -90,7 +90,7 @@ function InvocationCard({ inv }: { inv: Invocation }) {
       {inv.steps.map((step, i) => (
         <Step key={i} step={step} />
       ))}
-      {inv.status === "done" && !inv.edited && <div className="inv-wait">no edit — waiting for more</div>}
+      {inv.status === "done" && !inv.edited && !inv.asked && <div className="inv-wait">no edit — waiting for more</div>}
       {inv.error && <div className="inv-error">{inv.error}</div>}
     </section>
   );

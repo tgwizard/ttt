@@ -11,6 +11,8 @@ export type RecorderProps = {
   level: number;
   busy: boolean;
   canUndo: boolean;
+  question?: string;
+  onDismissQuestion: () => void;
   onStart: () => void;
   onStop: () => void;
   onType: (text: string) => void;
@@ -26,19 +28,31 @@ export function Recorder(props: RecorderProps) {
 
   useLayoutEffect(() => {
     const el = tickerRef.current;
-    if (el) el.scrollLeft = el.scrollWidth;
-  }, [partial, utterances]);
+    if (!el) return;
+    el.scrollLeft = el.scrollWidth;
+    el.classList.toggle("overflowing", el.scrollWidth > el.clientWidth);
+  }, [partial, utterances, state]);
 
-  const recent = utterances.slice(-6);
+  const recent = utterances.filter((u) => u.role !== "assistant").slice(-6);
 
   return (
     <div className="recorder">
+      {props.question && (
+        <div className="question">
+          <span>{props.question}</span>
+          <button className="icon-button small" onClick={props.onDismissQuestion} aria-label="Dismiss">
+            <svg width="10" height="10" viewBox="0 0 14 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M3 3l8 8M11 3l-8 8" />
+            </svg>
+          </button>
+        </div>
+      )}
       {props.error && <div className="rec-error">{props.error}</div>}
       <div className="pill">
         <button
           className={`mic ${state}`}
           onClick={active ? props.onStop : props.onStart}
-          disabled={state === "connecting" || state === "stopping"}
+          disabled={state === "stopping"}
           title={active ? "Stop" : "Start talking"}
           style={{ ["--level" as string]: Math.min(1, level * 8).toFixed(2) }}
         >

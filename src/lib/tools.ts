@@ -2,6 +2,21 @@
 
 export type ToolResult = { ok: true; doc: string; message: string } | { ok: false; error: string };
 
+// Not a document tool: handled by the agent, which shows the question to the user.
+export const ASK_USER_TOOL = {
+  type: "function",
+  function: {
+    name: "ask_user",
+    description:
+      "Ask the user a short question when you can't act without their input (e.g. which part they mean, missing details). The question is shown on screen; their spoken answer arrives as new speech. Ends your turn. Don't use it for things you can reasonably decide yourself.",
+    parameters: {
+      type: "object",
+      properties: { question: { type: "string", description: "One short question, phrased to be answered out loud." } },
+      required: ["question"],
+    },
+  },
+} as const;
+
 export const TOOL_DEFINITIONS = [
   {
     type: "function",

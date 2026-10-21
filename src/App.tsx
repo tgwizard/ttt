@@ -19,11 +19,18 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => load("sidebar", window.innerWidth > 900));
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => clampSidebar(load("sidebarWidth", 400)));
   const [settingsOpen, setSettingsOpen] = useState(!apiKey);
-  const [rec, setRec] = useState<RecState>("idle");
+  const [rec, setRecState] = useState<RecState>("idle");
+  // Updated synchronously so a quick second keypress sees the new state before React re-renders.
+  const recRef = useRef<RecState>("idle");
+  const setRec = (s: RecState) => {
+    recRef.current = s;
+    setRecState(s);
+  };
   const [recError, setRecError] = useState<string>();
   const [partial, setPartial] = useState("");
   const [level, setLevel] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [question, setQuestion] = useState<string>();
   // The session transcript, persisted with the doc. Speech that never reached the model (reload mid-run) comes back as pending.
   const [utterances, setUtterances] = useState<Utterance[]>(() =>
     load<Utterance[]>("transcript", []).map((u) => (u.status === "new" ? { ...u, status: "pending" } : u)),
@@ -94,9 +101,13 @@ export function App() {
         inv.endedAt = Date.now();
         if (inv.edited) undoRef.current.push(before);
         const ids = new Set(active.map((u) => u.id));
-        commitUtterances(
-          utterancesRef.current.map((u) => (ids.has(u.id) ? { ...u, status: inv.edited ? "handled" : "pending" } : u)),
-        );
+        const acted = inv.edited || !!inv.asked;
+        let next = utterancesRef.current.map((u) => (ids.has(u.id) ? { ...u, status: acted ? ("handled" as const) : ("pending" as const) } : u));
+        if (inv.asked) {
+          next = [...next, { id: (next.at(-1)?.id ?? 0) + 1, text: inv.asked, at: Date.now(), status: "handled", role: "assistant" }];
+          setQuestion(inv.asked);
+        }
+        commitUtterances(next);
         save("log", invocationsRef.current);
         rerender();
       }
@@ -109,6 +120,7 @@ export function App() {
   const addUtterance = useCallback(
     (text: string) => {
       const last = utterancesRef.current.at(-1);
+      setQuestion(undefined);
       commitUtterances([...utterancesRef.current, { id: (last?.id ?? 0) + 1, text, at: Date.now(), status: "new" }]);
       void pump();
     },
@@ -148,11 +160,9 @@ export function App() {
     await transcriberRef.current?.stop();
   };
 
-  const recRef = useRef(rec);
-  recRef.current = rec;
   const toggleRecording = () => {
     if (recRef.current === "idle") void startRecording();
-    else if (recRef.current === "recording") void stopRecording();
+    else if (recRef.current === "recording" || recRef.current === "connecting") void stopRecording();
   };
   const toggleRef = useRef(toggleRecording);
   toggleRef.current = toggleRecording;
@@ -193,6 +203,8 @@ export function App() {
     level,
     busy,
     canUndo: undoRef.current.length > 0,
+    question,
+    onDismissQuestion: () => setQuestion(undefined),
     onStart: startRecording,
     onStop: stopRecording,
     onType: addUtterance,

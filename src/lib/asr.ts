@@ -71,10 +71,7 @@ export class Transcriber {
   }
 
   async start(apiKey: string): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-
+    // Open the socket first so the handshake overlaps with mic and audio setup.
     const ws = new WebSocket(`${ASR_URL}?sessionId=ttt-${crypto.randomUUID()}`);
     this.ws = ws;
     ws.binaryType = "arraybuffer";
@@ -123,15 +120,22 @@ export class Transcriber {
       this.teardownAudio();
       if (!this.closed) {
         this.closed = true;
-        this.h.onClose(this.stopping && e.code === 1000 ? undefined : error);
+        // Stopping before the handshake finished closes from our side: not an error.
+        this.h.onClose(this.stopping && (e.code === 1000 || !this.ready) ? undefined : error);
       }
     };
+
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    if (this.stopping || this.closed) return this.teardownAudio();
 
     const ctx = new AudioContext();
     this.ctx = ctx;
     const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
     await ctx.audioWorklet.addModule(url);
     URL.revokeObjectURL(url);
+    if (this.stopping || this.closed || !this.stream) return this.teardownAudio();
     const source = ctx.createMediaStreamSource(this.stream);
     const node = new AudioWorkletNode(ctx, "pcm24k");
     node.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
@@ -152,11 +156,12 @@ export class Transcriber {
     this.stopping = true;
     this.teardownAudio();
     const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    // Nothing to flush before the handshake: just close.
+    if (!ws || ws.readyState !== WebSocket.OPEN || !this.ready) {
       ws?.close();
       return;
     }
-    if (this.ready) ws.send(JSON.stringify({ type: "endStream" }));
+    ws.send(JSON.stringify({ type: "endStream" }));
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         ws.close();

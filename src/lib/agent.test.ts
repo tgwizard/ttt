@@ -12,6 +12,11 @@ test("prompt is handled transcript, then document, then new speech", () => {
   );
 });
 
+test("questions the model asked appear in the transcript", () => {
+  const msg = buildUserMessage([u(1, "insert an image", "handled"), { ...u(2, "Which image?", "handled"), role: "assistant" }], "");
+  assert.ok(msg.includes("[handled] insert an image\n[you asked] Which image?"));
+});
+
 test("the whole transcript is included, and appending keeps the prefix", () => {
   const many = Array.from({ length: 40 }, (_, i) => u(i, `said ${i}`, "handled"));
   const before = buildUserMessage(many, "doc");
