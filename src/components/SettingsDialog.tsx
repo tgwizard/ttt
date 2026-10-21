@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { Design } from "../App.tsx";
 import type { Settings } from "../lib/agent.ts";
 
 // Suggestions only: any model ID from /v1/models can be typed in.
@@ -17,6 +18,8 @@ export function SettingsDialog(props: {
   apiKey: string;
   remembered: boolean;
   settings: Settings;
+  design: Design;
+  onDesign: (design: Design) => void;
   onSave: (key: string, remember: boolean, settings: Settings) => void;
   onClearDoc: () => void;
   onClose: () => void;
@@ -76,6 +79,13 @@ export function SettingsDialog(props: {
             </select>
           </label>
         </div>
+        <label>
+          Design (applies right away)
+          <select value={props.design} onChange={(e) => props.onDesign(e.target.value as Design)}>
+            <option value="pill">Floating pill</option>
+            <option value="inline">Inline</option>
+          </select>
+        </label>
         <div className="row end">
           <button
             type="button"

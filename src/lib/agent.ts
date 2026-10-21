@@ -5,6 +5,8 @@ import { applyTool, TOOL_DEFINITIONS } from "./tools.ts";
 
 export const API_BASE = "https://api.meta.ai/v1";
 export const MAX_STEPS = 6;
+// Routes our requests to backends that already hold the system prompt + tools prefix.
+const PROMPT_CACHE_KEY = "ttt-agent";
 
 export type UtteranceStatus = "new" | "pending" | "handled";
 export type Utterance = { id: number; text: string; at: number; status: UtteranceStatus };
@@ -16,7 +18,12 @@ export type StepLog = {
   latencyMs: number;
   content: string | null;
   toolCalls: ToolCallLog[];
-  usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
   finishReason?: string;
   request: unknown;
   response: unknown;
@@ -55,11 +62,13 @@ Along with your tool calls, say in one short sentence what you're doing (it goes
 
 const HISTORY_LIMIT = 12;
 
+// Document first: it changes less often than the speech, so it extends the cached prefix
+// (unchanged after a "wait", and an append-only doc keeps its beginning).
 export function buildUserMessage(utterances: Utterance[], doc: string): string {
   const recent = utterances.slice(-HISTORY_LIMIT);
   const earlier = recent.filter((u) => u.status === "handled");
   const active = recent.filter((u) => u.status !== "handled");
-  const lines: string[] = [];
+  const lines: string[] = [doc.trim() ? `<document>\n${doc}\n</document>` : "<document>\n(empty)\n</document>", ""];
   if (earlier.length) {
     lines.push("<earlier_speech>");
     for (const u of earlier) lines.push(`[handled] ${u.text}`);
@@ -67,8 +76,7 @@ export function buildUserMessage(utterances: Utterance[], doc: string): string {
   }
   lines.push("<new_speech>");
   for (const u of active) lines.push(u.status === "pending" ? `[pending] ${u.text}` : u.text);
-  lines.push("</new_speech>", "");
-  lines.push(doc.trim() ? `<document>\n${doc}\n</document>` : "<document>\n(empty)\n</document>");
+  lines.push("</new_speech>");
   return lines.join("\n");
 }
 
@@ -101,6 +109,7 @@ export async function runAgent(opts: {
       messages,
       tools: TOOL_DEFINITIONS,
       tool_choice: "auto",
+      prompt_cache_key: PROMPT_CACHE_KEY,
     };
     const t0 = performance.now();
     const res = await fetch(`${API_BASE}/chat/completions`, {

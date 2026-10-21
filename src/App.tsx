@@ -3,18 +3,24 @@ import { runAgent, type Invocation, type Settings, type Utterance } from "./lib/
 import { Transcriber } from "./lib/asr.ts";
 import { isKeyRemembered, load, loadKey, save, saveKey } from "./lib/storage.ts";
 import { DocView } from "./components/DocView.tsx";
-import { Recorder, type RecState } from "./components/Recorder.tsx";
+import { InlineRecorder } from "./components/InlineRecorder.tsx";
+import { Recorder, type RecState, type RecorderProps } from "./components/Recorder.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SettingsDialog } from "./components/SettingsDialog.tsx";
 
 const DEFAULT_SETTINGS: Settings = { model: "muse-spark-1.3-contributor", reasoningEffort: "minimal" };
 const LOG_LIMIT = 50;
+export type Design = "pill" | "inline";
+
+const clampSidebar = (w: number) => Math.round(Math.max(280, Math.min(w, window.innerWidth * 0.7)));
 
 export function App() {
   const [apiKey, setApiKey] = useState(loadKey);
   const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...load("settings", {}) }));
   const [doc, setDocState] = useState<string>(() => load("doc", ""));
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => load("sidebar", window.innerWidth > 900));
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => clampSidebar(load("sidebarWidth", 400)));
+  const [design, setDesign] = useState<Design>(() => load("design", "pill"));
   const [settingsOpen, setSettingsOpen] = useState(!apiKey);
   const [rec, setRec] = useState<RecState>("idle");
   const [recError, setRecError] = useState<string>();
@@ -141,6 +147,15 @@ export function App() {
     await transcriberRef.current?.stop();
   };
 
+  const recRef = useRef(rec);
+  recRef.current = rec;
+  const toggleRecording = () => {
+    if (recRef.current === "idle") void startRecording();
+    else if (recRef.current === "recording") void stopRecording();
+  };
+  const toggleRef = useRef(toggleRecording);
+  toggleRef.current = toggleRecording;
+
   const undo = useCallback(() => {
     const prev = undoRef.current.pop();
     if (prev !== undefined) setDoc(prev);
@@ -149,8 +164,11 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest("textarea, input")) return;
-      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+      if (target.closest("textarea, input, select, button, .backdrop")) return;
+      if (e.key === " " && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) {
+        e.preventDefault();
+        toggleRef.current();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
       }
@@ -162,9 +180,29 @@ export function App() {
   useEffect(() => {
     save("sidebar", sidebarOpen);
   }, [sidebarOpen]);
+  useEffect(() => {
+    save("sidebarWidth", sidebarWidth);
+  }, [sidebarWidth]);
+
+  const recorderProps: RecorderProps = {
+    state: rec,
+    error: recError,
+    partial,
+    utterances,
+    level,
+    busy,
+    canUndo: undoRef.current.length > 0,
+    onStart: startRecording,
+    onStop: stopRecording,
+    onType: addUtterance,
+    onUndo: undo,
+  };
 
   return (
-    <div className={`app ${sidebarOpen ? "with-sidebar" : ""}`}>
+    <div
+      className={`app design-${design} ${sidebarOpen ? "with-sidebar" : ""}`}
+      style={{ ["--sidebar" as string]: `${sidebarWidth}px` }}
+    >
       <main className="page">
         <DocView
           doc={doc}
@@ -173,6 +211,7 @@ export function App() {
             setDoc(next);
           }}
         />
+        {design === "inline" && <InlineRecorder {...recorderProps} />}
       </main>
 
       <div className="corner">
@@ -184,19 +223,7 @@ export function App() {
         </button>
       </div>
 
-      <Recorder
-        state={rec}
-        error={recError}
-        partial={partial}
-        utterances={utterances}
-        level={level}
-        busy={busy}
-        canUndo={undoRef.current.length > 0}
-        onStart={startRecording}
-        onStop={stopRecording}
-        onType={addUtterance}
-        onUndo={undo}
-      />
+      {design === "pill" && <Recorder {...recorderProps} />}
 
       {sidebarOpen && (
         <Sidebar
@@ -206,6 +233,7 @@ export function App() {
             save("log", []);
             rerender();
           }}
+          onResize={(w) => setSidebarWidth(clampSidebar(w))}
         />
       )}
 
@@ -214,6 +242,11 @@ export function App() {
           apiKey={apiKey}
           remembered={isKeyRemembered()}
           settings={settings}
+          design={design}
+          onDesign={(d) => {
+            setDesign(d);
+            save("design", d);
+          }}
           onSave={(key, remember, next) => {
             saveKey(key, remember);
             setApiKey(key);

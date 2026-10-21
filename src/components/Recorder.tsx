@@ -3,8 +3,7 @@ import type { Utterance } from "../lib/agent.ts";
 
 export type RecState = "idle" | "connecting" | "recording" | "stopping";
 
-// The floating pill: record button, a ticker of what you've said, and agent status.
-export function Recorder(props: {
+export type RecorderProps = {
   state: RecState;
   error?: string;
   partial: string;
@@ -16,7 +15,10 @@ export function Recorder(props: {
   onStop: () => void;
   onType: (text: string) => void;
   onUndo: () => void;
-}) {
+};
+
+// The floating pill: record button, a ticker of what you've said, and agent status.
+export function Recorder(props: RecorderProps) {
   const { state, partial, utterances, level, busy } = props;
   const [typed, setTyped] = useState("");
   const tickerRef = useRef<HTMLDivElement>(null);

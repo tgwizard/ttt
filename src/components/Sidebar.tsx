@@ -2,7 +2,15 @@ import { useEffect, useRef } from "react";
 import type { Invocation, StepLog } from "../lib/agent.ts";
 
 // The right-hand log of model invocations.
-export function Sidebar({ invocations, onClear }: { invocations: Invocation[]; onClear: () => void }) {
+export function Sidebar({
+  invocations,
+  onClear,
+  onResize,
+}: {
+  invocations: Invocation[];
+  onClear: () => void;
+  onResize: (width: number) => void;
+}) {
   const endRef = useRef<HTMLDivElement>(null);
   const last = invocations.at(-1);
   useEffect(() => {
@@ -11,6 +19,24 @@ export function Sidebar({ invocations, onClear }: { invocations: Invocation[]; o
 
   return (
     <aside className="sidebar">
+      <div
+        className="resize-handle"
+        title="Drag to resize"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          const handle = e.currentTarget;
+          handle.setPointerCapture(e.pointerId);
+          const move = (ev: PointerEvent) => onResize(window.innerWidth - ev.clientX);
+          const up = () => {
+            handle.removeEventListener("pointermove", move);
+            handle.removeEventListener("pointerup", up);
+            document.body.classList.remove("resizing");
+          };
+          handle.addEventListener("pointermove", move);
+          handle.addEventListener("pointerup", up);
+          document.body.classList.add("resizing");
+        }}
+      />
       <header>
         <span>Invocations</span>
         {invocations.length > 0 && (
@@ -35,7 +61,8 @@ function InvocationCard({ inv }: { inv: Invocation }) {
   const tokensIn = sum(inv.steps, (s) => s.usage?.prompt_tokens);
   const tokensOut = sum(inv.steps, (s) => s.usage?.completion_tokens);
   const reasoning = sum(inv.steps, (s) => s.usage?.completion_tokens_details?.reasoning_tokens);
-  const time = new Date(inv.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const cached = sum(inv.steps, (s) => s.usage?.prompt_tokens_details?.cached_tokens);
+  const time = new Date(inv.startedAt).toLocaleTimeString([], { hourCycle: "h23", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
     <section className={`inv ${inv.status}`}>
@@ -45,13 +72,14 @@ function InvocationCard({ inv }: { inv: Invocation }) {
         {inv.status === "running" ? <span className="spinner tiny" /> : <span>{(ms / 1000).toFixed(1)}s</span>}
         <span title="steps">{inv.steps.length}×</span>
         {tokensIn > 0 && (
-          <span title="prompt → completion tokens (reasoning)">
-            {tokensIn}→{tokensOut}
-            {reasoning ? ` (${reasoning}r)` : ""}
+          <span title={`prompt tokens (cached) → completion tokens (reasoning)`}>
+            {tokensIn}
+            {cached ? <span className="cached">({cached})</span> : null}→{tokensOut}
+            {reasoning ? `(${reasoning}r)` : ""}
           </span>
         )}
         <span className="inv-model" title={`${inv.model} · reasoning: ${inv.reasoningEffort || "default"}`}>
-          {inv.model.replace(/^muse-/, "")} · {inv.reasoningEffort || "default"}
+          {inv.model.replace(/^muse-/, "")}/{inv.reasoningEffort || "default"}
         </span>
       </div>
       <div className="inv-speech">

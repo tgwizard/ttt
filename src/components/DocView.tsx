@@ -45,7 +45,7 @@ export function DocView({ doc, onEdit }: { doc: string; onEdit: (doc: string) =>
         setDraft(doc);
         setEditing(true);
       }}
-      dangerouslySetInnerHTML={{ __html: doc.trim() ? html : "<p>Press the mic and start talking.</p>" }}
+      dangerouslySetInnerHTML={{ __html: doc.trim() ? html : "<p>Press space and start talking.</p>" }}
     />
   );
 }
