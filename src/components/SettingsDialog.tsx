@@ -1,5 +1,4 @@
-import { useState } from "react";
-import type { Design } from "../App.tsx";
+import { useEffect, useState } from "react";
 import type { Settings } from "../lib/agent.ts";
 
 // Suggestions only: any model ID from /v1/models can be typed in.
@@ -18,8 +17,6 @@ export function SettingsDialog(props: {
   apiKey: string;
   remembered: boolean;
   settings: Settings;
-  design: Design;
-  onDesign: (design: Design) => void;
   onSave: (key: string, remember: boolean, settings: Settings) => void;
   onClearDoc: () => void;
   onClose: () => void;
@@ -27,9 +24,16 @@ export function SettingsDialog(props: {
   const [key, setKey] = useState(props.apiKey);
   const [remember, setRemember] = useState(props.remembered);
   const [settings, setSettings] = useState(props.settings);
+  const canClose = !!props.apiKey;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && canClose && props.onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canClose, props]);
 
   return (
-    <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && props.apiKey && props.onClose()}>
+    <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && canClose && props.onClose()}>
       <form
         className="dialog"
         onSubmit={(e) => {
@@ -37,26 +41,46 @@ export function SettingsDialog(props: {
           props.onSave(key.trim(), remember, settings);
         }}
       >
-        <h2>Talk to type</h2>
-        <p className="muted">
-          You talk; Muse Spark edits the document. Everything runs in your browser and calls the{" "}
+        <header>
+          <h2>Talk to type</h2>
+          {canClose && (
+            <button type="button" className="icon-button" onClick={props.onClose} aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <path d="M3 3l8 8M11 3l-8 8" />
+              </svg>
+            </button>
+          )}
+        </header>
+        <p className="lede">
+          You talk, Muse writes. Runs in your browser; your key is only sent to{" "}
           <a href="https://dev.meta.ai/" target="_blank" rel="noreferrer">
-            Meta Model API
-          </a>{" "}
-          directly with your key.
+            api.meta.ai
+          </a>
+          .
         </p>
-        <label>
-          API key
-          <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste your Model API key" autoFocus={!props.apiKey} />
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-          Remember on this device (otherwise kept for this tab only)
-        </label>
-        <div className="row">
-          <label>
-            Model
+
+        <div className="field">
+          <label htmlFor="key">API key</label>
+          <input
+            id="key"
+            type="password"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="Paste your Model API key"
+            autoFocus={!props.apiKey}
+            autoComplete="off"
+          />
+          <label className="check">
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+            Remember on this device
+          </label>
+        </div>
+
+        <div className="fields">
+          <div className="field">
+            <label htmlFor="model">Model</label>
             <input
+              id="model"
               list="ttt-models"
               value={settings.model}
               onChange={(e) => setSettings({ ...settings, model: e.target.value.trim() })}
@@ -67,29 +91,27 @@ export function SettingsDialog(props: {
                 <option key={m} value={m} />
               ))}
             </datalist>
-          </label>
-          <label>
-            Reasoning effort
-            <select value={settings.reasoningEffort} onChange={(e) => setSettings({ ...settings, reasoningEffort: e.target.value })}>
+          </div>
+          <div className="field">
+            <label htmlFor="effort">Reasoning</label>
+            <select
+              id="effort"
+              value={settings.reasoningEffort}
+              onChange={(e) => setSettings({ ...settings, reasoningEffort: e.target.value })}
+            >
               {EFFORTS.map((m) => (
                 <option key={m} value={m}>
                   {m || "default"}
                 </option>
               ))}
             </select>
-          </label>
+          </div>
         </div>
-        <label>
-          Design (applies right away)
-          <select value={props.design} onChange={(e) => props.onDesign(e.target.value as Design)}>
-            <option value="pill">Floating pill</option>
-            <option value="inline">Inline</option>
-          </select>
-        </label>
-        <div className="row end">
+
+        <footer>
           <button
             type="button"
-            className="ghost danger"
+            className="text-button danger"
             onClick={() => {
               props.onClearDoc();
               props.onClose();
@@ -98,15 +120,10 @@ export function SettingsDialog(props: {
             Clear document
           </button>
           <span className="spacer" />
-          {props.apiKey && (
-            <button type="button" className="ghost" onClick={props.onClose}>
-              Cancel
-            </button>
-          )}
           <button type="submit" className="primary" disabled={!key.trim() || !settings.model}>
             Save
           </button>
-        </div>
+        </footer>
       </form>
     </div>
   );

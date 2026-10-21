@@ -3,14 +3,12 @@ import { runAgent, type Invocation, type Settings, type Utterance } from "./lib/
 import { Transcriber } from "./lib/asr.ts";
 import { isKeyRemembered, load, loadKey, save, saveKey } from "./lib/storage.ts";
 import { DocView } from "./components/DocView.tsx";
-import { InlineRecorder } from "./components/InlineRecorder.tsx";
 import { Recorder, type RecState, type RecorderProps } from "./components/Recorder.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SettingsDialog } from "./components/SettingsDialog.tsx";
 
 const DEFAULT_SETTINGS: Settings = { model: "muse-spark-1.3-contributor", reasoningEffort: "minimal" };
 const LOG_LIMIT = 50;
-export type Design = "pill" | "inline";
 
 const clampSidebar = (w: number) => Math.round(Math.max(280, Math.min(w, window.innerWidth * 0.7)));
 
@@ -20,7 +18,6 @@ export function App() {
   const [doc, setDocState] = useState<string>(() => load("doc", ""));
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => load("sidebar", window.innerWidth > 900));
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => clampSidebar(load("sidebarWidth", 400)));
-  const [design, setDesign] = useState<Design>(() => load("design", "pill"));
   const [settingsOpen, setSettingsOpen] = useState(!apiKey);
   const [rec, setRec] = useState<RecState>("idle");
   const [recError, setRecError] = useState<string>();
@@ -204,7 +201,7 @@ export function App() {
 
   return (
     <div
-      className={`app design-${design} ${sidebarOpen ? "with-sidebar" : ""}`}
+      className={`app ${sidebarOpen ? "with-sidebar" : ""}`}
       style={{ ["--sidebar" as string]: `${sidebarWidth}px` }}
     >
       <main className="page">
@@ -215,7 +212,6 @@ export function App() {
             setDoc(next);
           }}
         />
-        {design === "inline" && <InlineRecorder {...recorderProps} />}
       </main>
 
       <div className="corner">
@@ -227,7 +223,7 @@ export function App() {
         </button>
       </div>
 
-      {design === "pill" && <Recorder {...recorderProps} />}
+      <Recorder {...recorderProps} />
 
       {sidebarOpen && (
         <Sidebar
@@ -246,11 +242,6 @@ export function App() {
           apiKey={apiKey}
           remembered={isKeyRemembered()}
           settings={settings}
-          design={design}
-          onDesign={(d) => {
-            setDesign(d);
-            save("design", d);
-          }}
           onSave={(key, remember, next) => {
             saveKey(key, remember);
             setApiKey(key);

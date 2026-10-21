@@ -66,26 +66,42 @@ export function Recorder(props: RecorderProps) {
               setTyped("");
             }}
           >
-            <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Talk, or type an instruction…" />
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Talk, or type an instruction" />
           </form>
         )}
 
         <div className="pill-end">
-          {busy && <span className="spinner" title="Thinking" />}
+          {busy && (
+            <span className="thinking" title="Writing…">
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
           {props.canUndo && !busy && (
-            <button className="ghost small" onClick={props.onUndo} title="Undo last change (⌘Z)">
-              Undo
+            <button className="icon-button" onClick={props.onUndo} title="Undo last change (⌘Z)" aria-label="Undo">
+              <UndoIcon />
             </button>
           )}
+          {!active && !busy && !typed && <kbd title="Press space to start talking">space</kbd>}
         </div>
       </div>
     </div>
   );
 }
 
+function UndoIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 14L4 9l5-5" />
+      <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+    </svg>
+  );
+}
+
 function MicIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
       <rect x="9" y="3" width="6" height="11" rx="3" />
       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
     </svg>
