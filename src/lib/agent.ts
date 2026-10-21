@@ -49,7 +49,8 @@ Reading the speech:
 - Speech arrives at every pause, so the user may be mid-thought: a chunk can stop in the middle of a sentence or instruction ("and then add a section about"). If the speech is clearly incomplete or too ambiguous to act on, do NOT edit. Reply with a few words on what you're waiting for; it will come back to you together with what they say next.
 - If the intent is clear, act right away. Prefer acting over waiting: the user watches the document update live and can correct you.
 - Talk not meant for the document (talking to someone else, "hmm, let me think", "okay") → do nothing.
-- Earlier speech is shown for context. "handled" items were already applied: never apply them again. "pending" items were not acted on yet: treat them together with the new speech as one message.
+- <earlier_speech> is everything the user has said this session that you already acted on. Never apply it again; use it only as context ("the point I made earlier", "what I said about X").
+- <new_speech> is what to act on now. "pending" items in it were said earlier but not acted on yet: treat them together with the rest as one message.
 
 Editing:
 - The current document is given in full and is the source of truth; the user may also edit it by hand.
@@ -60,20 +61,18 @@ Editing:
 
 Along with your tool calls, say in one short sentence what you're doing (it goes to a log, not the document). If every call succeeds that is the end of your turn, so make all the edits you need in one go.`;
 
-const HISTORY_LIMIT = 12;
-
-// Document first: it changes less often than the speech, so it extends the cached prefix
-// (unchanged after a "wait", and an append-only doc keeps its beginning).
+// Prompt order is chosen for prefix caching: the handled transcript only grows at the end, the
+// document changes on edits, and the new speech changes every call.
 export function buildUserMessage(utterances: Utterance[], doc: string): string {
-  const recent = utterances.slice(-HISTORY_LIMIT);
-  const earlier = recent.filter((u) => u.status === "handled");
-  const active = recent.filter((u) => u.status !== "handled");
-  const lines: string[] = [doc.trim() ? `<document>\n${doc}\n</document>` : "<document>\n(empty)\n</document>", ""];
-  if (earlier.length) {
+  const handled = utterances.filter((u) => u.status === "handled");
+  const active = utterances.filter((u) => u.status !== "handled");
+  const lines: string[] = [];
+  if (handled.length) {
     lines.push("<earlier_speech>");
-    for (const u of earlier) lines.push(`[handled] ${u.text}`);
+    for (const u of handled) lines.push(`[handled] ${u.text}`);
     lines.push("</earlier_speech>", "");
   }
+  lines.push(doc.trim() ? `<document>\n${doc}\n</document>` : "<document>\n(empty)\n</document>", "");
   lines.push("<new_speech>");
   for (const u of active) lines.push(u.status === "pending" ? `[pending] ${u.text}` : u.text);
   lines.push("</new_speech>");

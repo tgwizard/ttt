@@ -27,12 +27,15 @@ export function App() {
   const [partial, setPartial] = useState("");
   const [level, setLevel] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [utterances, setUtterances] = useState<Utterance[]>([]);
+  // The session transcript, persisted with the doc. Speech that never reached the model (reload mid-run) comes back as pending.
+  const [utterances, setUtterances] = useState<Utterance[]>(() =>
+    load<Utterance[]>("transcript", []).map((u) => (u.status === "new" ? { ...u, status: "pending" } : u)),
+  );
   const [, setTick] = useState(0);
 
   const docRef = useRef(doc);
   const undoRef = useRef<string[]>([]);
-  const utterancesRef = useRef<Utterance[]>([]);
+  const utterancesRef = useRef(utterances);
   const invocationsRef = useRef<Invocation[]>(load("log", []));
   const runningRef = useRef(false);
   const transcriberRef = useRef<Transcriber>(undefined);
@@ -52,6 +55,7 @@ export function App() {
   const commitUtterances = (next: Utterance[]) => {
     utterancesRef.current = next;
     setUtterances(next);
+    save("transcript", next);
   };
 
   // Run the agent until every new utterance has been seen. Speech that arrives mid-run triggers another pass.
