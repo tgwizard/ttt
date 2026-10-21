@@ -37,18 +37,7 @@ export function Recorder(props: RecorderProps) {
 
   return (
     <div className="recorder">
-      {props.question && (
-        <div className="question">
-          <span>{props.question}</span>
-          <button className="icon-button small" onClick={props.onDismissQuestion} aria-label="Dismiss">
-            <svg width="10" height="10" viewBox="0 0 14 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M3 3l8 8M11 3l-8 8" />
-            </svg>
-          </button>
-        </div>
-      )}
-      {props.error && <div className="rec-error">{props.error}</div>}
-      <div className="pill">
+      <div className={`pill ${state === "recording" ? "live" : ""}`}>
         <button
           className={`mic ${state}`}
           onClick={active ? props.onStop : props.onStart}
@@ -100,6 +89,17 @@ export function Recorder(props: RecorderProps) {
           {!active && !busy && !typed && <kbd title="Press space to start talking">space</kbd>}
         </div>
       </div>
+      {props.question && (
+        <div className="question">
+          <span>{props.question}</span>
+          <button className="icon-button small" onClick={props.onDismissQuestion} aria-label="Dismiss">
+            <svg width="10" height="10" viewBox="0 0 14 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M3 3l8 8M11 3l-8 8" />
+            </svg>
+          </button>
+        </div>
+      )}
+      {props.error && <div className="rec-error">{props.error}</div>}
     </div>
   );
 }

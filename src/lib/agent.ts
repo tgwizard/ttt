@@ -1,30 +1,26 @@
 // The agent: given the user's speech and the current document, call the model and apply its tool calls.
-// Each invocation is stateless: the prompt carries recent speech (with what happened to it) and the full document.
+// Each invocation is stateless: the prompt carries the session's speech (with what happened to it) and the full document.
 
+import { callModel, ModelError, type Conversation, type ToolSpec, type Usage } from "./llm.ts";
+import type { ProviderId } from "./providers.ts";
 import { applyTool, ASK_USER_TOOL, TOOL_DEFINITIONS } from "./tools.ts";
 
-export const API_BASE = "https://api.meta.ai/v1";
 export const MAX_STEPS = 6;
-// Routes our requests to backends that already hold the system prompt + tools prefix.
+// Routes requests to backends that already hold the system prompt + tools prefix (where supported).
 const PROMPT_CACHE_KEY = "ttt-agent";
 
 export type UtteranceStatus = "new" | "pending" | "handled";
 // role "assistant" marks a question the model asked (via ask_user), kept in the transcript for context.
 export type Utterance = { id: number; text: string; at: number; status: UtteranceStatus; role?: "assistant" };
 
-export type Settings = { model: string; reasoningEffort: string };
+export type Settings = { provider: ProviderId; model: string; effort: string };
 
 export type ToolCallLog = { id: string; name: string; args: Record<string, unknown> | string; ok: boolean; result: string };
 export type StepLog = {
   latencyMs: number;
   content: string | null;
   toolCalls: ToolCallLog[];
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number };
-    completion_tokens_details?: { reasoning_tokens?: number };
-  };
+  usage?: Usage;
   finishReason?: string;
   request: unknown;
   response: unknown;
@@ -33,6 +29,7 @@ export type Invocation = {
   id: number;
   startedAt: number;
   endedAt?: number;
+  provider?: ProviderId; // absent on log entries from before providers existed (Meta)
   model: string;
   reasoningEffort: string;
   speech: string[]; // the new/pending speech this invocation acts on
@@ -64,34 +61,25 @@ Editing:
 
 Along with your tool calls, say in one short sentence what you're doing (it goes to a log, not the document). If every call succeeds that is the end of your turn, so make all the edits you need in one go.`;
 
-// Prompt order is chosen for prefix caching: the handled transcript only grows at the end, the
-// document changes on edits, and the new speech changes every call.
-export function buildUserMessage(utterances: Utterance[], doc: string): string {
+// Prompt order is chosen for prefix caching: the handled transcript only grows at the end (`stable`),
+// the document changes on edits, and the new speech changes every call.
+export function buildUserMessage(utterances: Utterance[], doc: string): Conversation["user"] {
   const handled = utterances.filter((u) => u.status === "handled");
   const active = utterances.filter((u) => u.status !== "handled");
-  const lines: string[] = [];
+  const stable: string[] = [];
   if (handled.length) {
-    lines.push("<earlier_speech>");
-    for (const u of handled) lines.push(u.role === "assistant" ? `[you asked] ${u.text}` : `[handled] ${u.text}`);
-    lines.push("</earlier_speech>", "");
+    stable.push("<earlier_speech>");
+    for (const u of handled) stable.push(u.role === "assistant" ? `[you asked] ${u.text}` : `[handled] ${u.text}`);
+    stable.push("</earlier_speech>", "", "");
   }
-  lines.push(doc.trim() ? `<document>\n${doc}\n</document>` : "<document>\n(empty)\n</document>", "");
-  lines.push("<new_speech>");
-  for (const u of active) lines.push(u.status === "pending" ? `[pending] ${u.text}` : u.text);
-  lines.push("</new_speech>");
-  return lines.join("\n");
+  const rest: string[] = [doc.trim() ? `<document>\n${doc}\n</document>` : "<document>\n(empty)\n</document>", ""];
+  rest.push("<new_speech>");
+  for (const u of active) rest.push(u.status === "pending" ? `[pending] ${u.text}` : u.text);
+  rest.push("</new_speech>");
+  return { stable: stable.join("\n"), rest: rest.join("\n") };
 }
 
-type ChatMessage =
-  | { role: "system" | "user"; content: string }
-  | { role: "assistant"; content: string | null; tool_calls?: RawToolCall[] }
-  | { role: "tool"; tool_call_id: string; content: string };
-type RawToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
-type ChatResponse = {
-  error?: { message?: string };
-  choices?: { finish_reason?: string; message?: { content?: string | null; tool_calls?: RawToolCall[] } }[];
-  usage?: StepLog["usage"];
-};
+const TOOLS: ToolSpec[] = [...TOOL_DEFINITIONS, ASK_USER_TOOL].map((t) => t.function as unknown as ToolSpec);
 
 export async function runAgent(opts: {
   apiKey: string;
@@ -104,72 +92,56 @@ export async function runAgent(opts: {
   signal?: AbortSignal;
 }): Promise<void> {
   const { apiKey, settings, getDoc, setDoc, invocation, onUpdate, signal } = opts;
-  const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: buildUserMessage(opts.utterances, getDoc()) },
-  ];
+  const convo: Conversation = { system: SYSTEM_PROMPT, user: buildUserMessage(opts.utterances, getDoc()), steps: [] };
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const body = {
-      model: settings.model,
-      ...(settings.reasoningEffort ? { reasoning_effort: settings.reasoningEffort } : {}),
-      messages,
-      tools: [...TOOL_DEFINITIONS, ASK_USER_TOOL],
-      tool_choice: "auto",
-      prompt_cache_key: PROMPT_CACHE_KEY,
-    };
     const t0 = performance.now();
-    const res = await fetch(`${API_BASE}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    });
-    const json = (await res.json().catch(() => null)) as ChatResponse | null;
-    const latencyMs = Math.round(performance.now() - t0);
-    if (!res.ok) {
-      const msg = json?.error?.message ?? `HTTP ${res.status}`;
-      invocation.steps.push({ latencyMs, content: null, toolCalls: [], request: structuredClone(body), response: json });
-      throw new Error(msg);
+    let turn;
+    try {
+      turn = await callModel({
+        providerId: settings.provider,
+        model: settings.model,
+        effort: settings.effort,
+        apiKey,
+        convo,
+        tools: TOOLS,
+        promptCacheKey: PROMPT_CACHE_KEY,
+        signal,
+      });
+    } catch (e) {
+      const latencyMs = Math.round(performance.now() - t0);
+      if (e instanceof ModelError) invocation.steps.push({ latencyMs, content: null, toolCalls: [], request: e.request, response: e.response });
+      throw e;
     }
-
-    const choice = json?.choices?.[0];
-    const message = choice?.message ?? {};
-    const rawCalls: RawToolCall[] = message.tool_calls ?? [];
     const stepLog: StepLog = {
-      latencyMs,
-      content: message.content ?? null,
+      latencyMs: Math.round(performance.now() - t0),
+      content: turn.content,
       toolCalls: [],
-      usage: json?.usage,
-      finishReason: choice?.finish_reason,
-      request: structuredClone(body),
-      response: json,
+      usage: turn.usage,
+      finishReason: turn.finishReason,
+      request: turn.request,
+      response: turn.response,
     };
     invocation.steps.push(stepLog);
-    messages.push({ role: "assistant", content: message.content ?? null, tool_calls: rawCalls.length ? rawCalls : undefined });
 
-    if (!rawCalls.length) {
+    if (!turn.toolCalls.length) {
       onUpdate();
       return;
     }
 
-    for (const call of rawCalls) {
-      let args: Record<string, unknown> | string;
+    const results: Conversation["steps"][number]["results"] = [];
+    for (const call of turn.toolCalls) {
+      const { args } = call;
       let result: string;
       let ok = false;
-      try {
-        args = JSON.parse(call.function.arguments || "{}");
-      } catch {
-        args = call.function.arguments;
-      }
       if (typeof args === "string") {
         result = "Error: arguments were not valid JSON.";
-      } else if (call.function.name === "ask_user") {
+      } else if (call.name === "ask_user") {
         ok = typeof args.question === "string" && args.question.trim() !== "";
         if (ok) invocation.asked = String(args.question).trim();
         result = ok ? "Shown to the user. Their answer will arrive as new speech." : "Error: `question` must be a non-empty string";
       } else {
-        const r = applyTool(getDoc(), call.function.name, args);
+        const r = applyTool(getDoc(), call.name, args);
         ok = r.ok;
         if (r.ok) {
           setDoc(r.doc);
@@ -179,9 +151,10 @@ export async function runAgent(opts: {
           result = `Error: ${r.error}`;
         }
       }
-      stepLog.toolCalls.push({ id: call.id, name: call.function.name, args, ok, result });
-      messages.push({ role: "tool", tool_call_id: call.id, content: result });
+      stepLog.toolCalls.push({ id: call.id, name: call.name, args, ok, result });
+      results.push({ id: call.id, content: result, isError: !ok });
     }
+    convo.steps.push({ replay: turn.replay, results });
     onUpdate();
     // Only go back to the model when something failed; a successful edit ends the turn.
     if (stepLog.toolCalls.every((c) => c.ok)) return;

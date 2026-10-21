@@ -26,13 +26,22 @@ const session = typeof sessionStorage === "undefined" ? undefined : sessionStora
 export const load = <T>(key: string, fallback: T) => read(local, key, fallback);
 export const save = (key: string, value: unknown) => write(local, key, value);
 
-export function loadKey(): string {
-  return read(session, "key", "") || read(local, "key", "");
+export type Keys = Partial<Record<string, string>>;
+
+// Keys are per provider. Older versions stored a single Meta key under "key".
+export function loadKeys(): Keys {
+  const legacy = read(session, "key", "") || read(local, "key", "");
+  const keys: Keys = { ...read<Keys>(local, "keys", {}), ...read<Keys>(session, "keys", {}) };
+  if (legacy && !keys.meta) keys.meta = legacy;
+  return keys;
 }
 
-export function saveKey(key: string, remember: boolean) {
-  write(session, "key", key || undefined);
-  write(local, "key", remember && key ? key : undefined);
+export function saveKeys(keys: Keys, remember: boolean) {
+  const clean = Object.fromEntries(Object.entries(keys).filter(([, v]) => v));
+  write(session, "keys", clean);
+  write(local, "keys", remember ? clean : undefined);
+  write(session, "key", undefined);
+  write(local, "key", undefined);
 }
 
-export const isKeyRemembered = () => !!read(local, "key", "");
+export const areKeysRemembered = () => Object.keys(read<Keys>(local, "keys", {})).length > 0 || !!read(local, "key", "");

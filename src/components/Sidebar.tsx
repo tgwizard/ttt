@@ -78,8 +78,8 @@ function InvocationCard({ inv }: { inv: Invocation }) {
             {reasoning ? `(${reasoning}r)` : ""}
           </span>
         )}
-        <span className="inv-model" title={`${inv.model} · reasoning: ${inv.reasoningEffort || "default"}`}>
-          {inv.model.replace(/^muse-/, "")}/{inv.reasoningEffort || "default"}
+        <span className="inv-model" title={`${inv.provider ?? "meta"} · ${inv.model} · reasoning: ${inv.reasoningEffort || "default"}`}>
+          {inv.model.replace(/^(muse-|claude-)/, "")}/{inv.reasoningEffort || "default"}
         </span>
       </div>
       <div className="inv-speech">

@@ -1,24 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { runAgent, type Invocation, type Settings, type Utterance } from "./lib/agent.ts";
 import { Transcriber } from "./lib/asr.ts";
-import { isKeyRemembered, load, loadKey, save, saveKey } from "./lib/storage.ts";
+import { provider } from "./lib/providers.ts";
+import { areKeysRemembered, load, loadKeys, save, saveKeys, type Keys } from "./lib/storage.ts";
 import { DocView } from "./components/DocView.tsx";
 import { Recorder, type RecState, type RecorderProps } from "./components/Recorder.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SettingsDialog } from "./components/SettingsDialog.tsx";
 
-const DEFAULT_SETTINGS: Settings = { model: "muse-spark-1.3-contributor", reasoningEffort: "minimal" };
+// Older versions stored { model, reasoningEffort } for Meta only.
+function loadSettings(): Settings {
+  const s = load<Partial<Settings> & { reasoningEffort?: string }>("settings", {});
+  const p = provider(s.provider ?? "meta");
+  return { provider: p.id, model: s.model || p.defaultModel, effort: s.effort ?? s.reasoningEffort ?? p.defaultEffort };
+}
 const LOG_LIMIT = 50;
 
 const clampSidebar = (w: number) => Math.round(Math.max(280, Math.min(w, window.innerWidth * 0.7)));
 
 export function App() {
-  const [apiKey, setApiKey] = useState(loadKey);
-  const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...load("settings", {}) }));
+  const [keys, setKeys] = useState<Keys>(loadKeys);
+  const [settings, setSettings] = useState<Settings>(loadSettings);
+  const apiKey = keys[settings.provider] ?? "";
+  const asrKey = keys.meta ?? "";
   const [doc, setDocState] = useState<string>(() => load("doc", ""));
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => load("sidebar", window.innerWidth > 900));
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => clampSidebar(load("sidebarWidth", 400)));
-  const [settingsOpen, setSettingsOpen] = useState(!apiKey);
+  const [settingsOpen, setSettingsOpen] = useState(!apiKey || !asrKey);
   const [rec, setRecState] = useState<RecState>("idle");
   // Updated synchronously so a quick second keypress sees the new state before React re-renders.
   const recRef = useRef<RecState>("idle");
@@ -74,8 +82,9 @@ export function App() {
         const inv: Invocation = {
           id: (invocationsRef.current.at(-1)?.id ?? 0) + 1,
           startedAt: Date.now(),
+          provider: settingsRef.current.provider,
           model: settingsRef.current.model,
-          reasoningEffort: settingsRef.current.reasoningEffort,
+          reasoningEffort: settingsRef.current.effort,
           speech: active.map((u) => (u.status === "pending" ? `[pending] ${u.text}` : u.text)),
           steps: [],
           status: "running",
@@ -128,7 +137,7 @@ export function App() {
   );
 
   const startRecording = async () => {
-    if (!apiKey) return setSettingsOpen(true);
+    if (!asrKey || !apiKey) return setSettingsOpen(true);
     setRecError(undefined);
     setRec("connecting");
     const t = new Transcriber({
@@ -146,7 +155,7 @@ export function App() {
     });
     transcriberRef.current = t;
     try {
-      await t.start(apiKey);
+      await t.start(asrKey);
     } catch (e) {
       transcriberRef.current = undefined;
       setRec("idle");
@@ -227,11 +236,23 @@ export function App() {
       </main>
 
       <div className="corner">
-        <button className="ghost" onClick={() => setSettingsOpen(true)} title="Settings">
-          Settings
+        <button className="icon-button" onClick={() => setSettingsOpen(true)} title="Settings" aria-label="Settings">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+            <circle cx="16" cy="7" r="2" />
+            <circle cx="10" cy="17" r="2" />
+          </svg>
         </button>
-        <button className="ghost" onClick={() => setSidebarOpen((o) => !o)} title="Toggle log">
-          {sidebarOpen ? "Hide log" : "Log"}
+        <button
+          className={`icon-button ${sidebarOpen ? "active" : ""}`}
+          onClick={() => setSidebarOpen((o) => !o)}
+          title={sidebarOpen ? "Hide log" : "Show log"}
+          aria-label="Toggle log"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="3" />
+            <path d="M15 4v16" />
+          </svg>
         </button>
       </div>
 
@@ -251,12 +272,12 @@ export function App() {
 
       {settingsOpen && (
         <SettingsDialog
-          apiKey={apiKey}
-          remembered={isKeyRemembered()}
+          keys={keys}
+          remembered={areKeysRemembered()}
           settings={settings}
-          onSave={(key, remember, next) => {
-            saveKey(key, remember);
-            setApiKey(key);
+          onSave={(nextKeys, remember, next) => {
+            saveKeys(nextKeys, remember);
+            setKeys(nextKeys);
             setSettings(next);
             save("settings", next);
             setSettingsOpen(false);

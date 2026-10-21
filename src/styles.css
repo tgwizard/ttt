@@ -41,7 +41,7 @@ a {
 /* Document */
 
 .page {
-  padding: 72px 24px 200px;
+  padding: 128px 24px 160px;
   transition: margin-right 0.2s;
 }
 .with-sidebar .page {
@@ -144,11 +144,18 @@ a {
 
 .corner {
   position: fixed;
-  top: 12px;
+  top: 26px;
   right: 16px;
   display: flex;
-  gap: 4px;
+  gap: 2px;
   z-index: 5;
+}
+.corner .icon-button {
+  width: 30px;
+  height: 30px;
+}
+.icon-button.active {
+  color: var(--ink);
 }
 .with-sidebar .corner {
   right: calc(var(--sidebar) + 16px);
@@ -191,25 +198,21 @@ a {
 
 .recorder {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 28px;
+  top: 14px;
+  left: 16px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 10px;
   pointer-events: none;
   z-index: 10;
-}
-.with-sidebar .recorder {
-  right: var(--sidebar);
 }
 .pill {
   pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 12px;
-  width: min(520px, calc(100vw - 32px));
+  width: min(440px, calc(100vw - 112px));
   height: 52px;
   padding: 0 8px;
   background: rgba(255, 255, 255, 0.82);
@@ -222,6 +225,24 @@ a {
     0 12px 32px rgba(0, 0, 0, 0.08);
   transition: box-shadow 0.2s;
 }
+.pill.live {
+  animation: pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(229, 72, 77, 0.25),
+      0 0 0 0 rgba(229, 72, 77, 0.12),
+      0 12px 32px rgba(0, 0, 0, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(229, 72, 77, 0.4),
+      0 0 0 6px rgba(229, 72, 77, 0.08),
+      0 12px 32px rgba(0, 0, 0, 0.08);
+  }
+}
 .pill:focus-within {
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.12),
@@ -229,11 +250,13 @@ a {
     0 12px 32px rgba(0, 0, 0, 0.1);
 }
 .question {
+  position: relative;
+  margin-left: 10px;
   pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  max-width: min(520px, calc(100vw - 32px));
+  max-width: min(440px, calc(100vw - 48px));
   padding: 8px 8px 8px 16px;
   background: var(--ink);
   color: #fff;
@@ -249,15 +272,27 @@ a {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
+/* A small tail pointing up at the mic. */
+.question::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 14px;
+  width: 12px;
+  height: 12px;
+  background: var(--ink);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(-6px) scale(0.98);
   }
 }
 .rec-error {
   pointer-events: auto;
-  max-width: min(520px, calc(100vw - 32px));
+  max-width: min(440px, calc(100vw - 32px));
   font-size: 12.5px;
   color: var(--accent);
   background: #fff5f5;
@@ -662,6 +697,57 @@ body.resizing .recorder {
   letter-spacing: normal;
   color: #aaa;
 }
+.label-note {
+  font-weight: 400;
+  color: #aaa;
+  margin-left: 4px;
+}
+.field-hint {
+  font-size: 12px;
+  color: #999;
+}
+.field-hint a {
+  white-space: nowrap;
+}
+.field-hint a,
+a.field-hint {
+  color: #777;
+  text-decoration-color: #ccc;
+  text-underline-offset: 2px;
+}
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.segmented button {
+  position: relative;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #e2e2e2;
+  border-radius: 999px;
+  background: #fafafa;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+}
+.segmented button:hover {
+  border-color: #ccc;
+}
+.segmented button.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+.has-key {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  vertical-align: 2px;
+}
 label.check {
   display: flex;
   align-items: center;
@@ -712,10 +798,8 @@ label.check input {
   .app {
     --sidebar: 100vw !important;
   }
-  .with-sidebar .page,
-  .with-sidebar .recorder {
+  .with-sidebar .page {
     margin-right: 0;
-    right: 0;
   }
   .with-sidebar .corner {
     right: 16px;
@@ -723,3 +807,10 @@ label.check input {
   }
 }
 
+
+/* No keyboard on touch devices: the space hint is noise. */
+@media (hover: none) {
+  .pill kbd {
+    display: none;
+  }
+}
